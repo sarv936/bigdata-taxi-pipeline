@@ -1,0 +1,29 @@
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, hour, dayofweek
+
+# Initialize Spark
+spark = SparkSession.builder \
+    .appName("NYC Taxi ETL Pipeline") \
+    .getOrCreate()
+
+# Load raw dataset (replace path with your file)
+df = spark.read.csv("data/yellow_tripdata_sample.csv", header=True, inferSchema=True)
+
+# Basic cleaning: filter out invalid trips
+df_clean = df.filter((col("passenger_count") > 0) & (col("trip_distance") > 0))
+
+# Feature engineering: extract pickup hour & weekday
+df_features = df_clean.withColumn("pickup_hour", hour("tpep_pickup_datetime")) \
+                      .withColumn("pickup_day", dayofweek("tpep_pickup_datetime"))
+
+# Aggregation: avg trip distance & fare per hour
+agg = df_features.groupBy("pickup_day", "pickup_hour") \
+    .avg("trip_distance", "fare_amount") \
+    .withColumnRenamed("avg(trip_distance)", "avg_distance") \
+    .withColumnRenamed("avg(fare_amount)", "avg_fare")
+
+# Save results
+agg.write.mode("overwrite").parquet("output/aggregated_trips")
+
+print("ETL Pipeline completed successfully!")
+spark.stop()
